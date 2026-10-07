@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine, Mounted } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import type { Activity, Step } from '../types'
+import type { Activity, Job, Step } from '../types'
 
 const PLUGIN = 'step-tracker'
 
@@ -64,6 +64,8 @@ function world(on: On) {
     steps: () => (state.steps ?? []) as Step[],
     activity: () => (state.activity ?? []) as Activity[],
     phase: () => state.phase as string | undefined,
+    job: () => state.job as Job | null | undefined,
+    history: () => (state.history ?? []) as Job[],
   }
 }
 
@@ -178,7 +180,7 @@ test('task tool calls are not listed as activity', async ($, on) => {
   expect(w.activity()).toEqual([])
 })
 
-test('a new turn clears activity but keeps the step list; a new task after a finished list starts fresh', async ($, on) => {
+test('a new turn archives the previous job into history and starts the new job empty', async ($, on) => {
   const w = world(on)
   taskTools(on)
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
@@ -193,17 +195,52 @@ test('a new turn clears activity but keeps the step list; a new task after a fin
   await $.turn.start({ text: 'again', turnId: 'turn-2' })
   expect(w.phase()).toBe('working')
   expect(w.activity()).toEqual([])
-  expect(w.steps().map(s => s.title)).toEqual(['Open'])
+  expect(w.steps()).toEqual([])
+  expect(w.job()).toMatchObject({ id: 'turn-2', prompt: 'again' })
+  expect(w.history()).toHaveLength(1)
+  expect(w.history()[0]?.steps.map(s => s.title)).toEqual(['Open'])
 
-  await $.tool.call({ tool: 'TaskUpdate', taskId: 't-Open', status: 'completed' })
+  await $.tool.call({ tool: 'TaskCreate', subject: 'Second', description: 'x' })
+  await $.tool.call({ tool: 'TaskUpdate', taskId: 't-Second', status: 'completed' })
   await $.turn.complete({ turnId: 'turn-2', answer: 'done', durationMs: 10, isAborted: false, reason: 'answer' })
   expect(w.phase()).toBe('idle')
+  expect(w.steps().map(s => s.title)).toEqual(['Second'])
 
-  await $.turn.start({ text: 'new job', turnId: 'turn-3' })
-  expect(w.steps().map(s => s.title)).toEqual(['Open'])
+  await $.turn.start({ text: '  a much longer prompt   with spaces  ', turnId: 'turn-3' })
+  expect(w.steps()).toEqual([])
+  expect(w.job()?.prompt).toBe('a much longer prompt with spaces')
+  expect(w.history().map(j => j.prompt)).toEqual(['', 'again'])
+  expect(w.history()[1]?.steps[0]).toMatchObject({ title: 'Second', status: 'completed' })
 
-  await $.tool.call({ tool: 'TaskCreate', subject: 'Fresh', description: 'x' })
-  expect(w.steps().map(s => s.title)).toEqual(['Fresh'])
+  await $.turn.start({ text: 'nothing recorded last time', turnId: 'turn-4' })
+  expect(w.history()).toHaveLength(2)
+})
+
+test('the band names the current job and the history pane lists previous ones', async ($, on) => {
+  const w = world(on)
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+
+  await $.turn.start({ text: 'first job', turnId: 'j1' })
+  await callAny($, { tool: 'mcp__step-tracker__plan', steps: [{ title: 'Alpha' }, { title: 'Beta' }] })
+  await callAny($, { tool: 'mcp__step-tracker__step', index: 1, status: 'completed' })
+  await $.turn.start({ text: 'second job', turnId: 'j2' })
+  await callAny($, { tool: 'mcp__step-tracker__plan', steps: [{ title: 'Gamma' }] })
+  expect(w.history()).toHaveLength(1)
+
+  for (const surface of SURFACES) {
+    const band = await $.ui.mount({ plugin: PLUGIN, surface, ...BAND })
+    expect(await band.find({ type: 'Text', text: /second job/ })).toBeDefined()
+    expect(await band.find({ type: 'Text', text: /Gamma/ })).toBeDefined()
+    expect(await band.find({ type: 'Text', text: /Alpha/ })).toBeUndefined()
+    await band.unmount()
+
+    const pane = await $.ui.mount({ plugin: PLUGIN, surface, ...PANE, requestId: 'steps-history' })
+    expect(await pane.find({ type: 'Text', text: /first job/ })).toBeDefined()
+    expect(await pane.find({ type: 'Text', text: /1\/2 done/ })).toBeDefined()
+    expect(await pane.find({ type: 'Text', text: /Alpha/ })).toBeDefined()
+    expect(await pane.find({ type: 'Text', text: /Gamma/ })).toBeUndefined()
+    await pane.unmount()
+  }
 })
 
 test('the pane draws an empty state before any step exists', async ($, on) => {

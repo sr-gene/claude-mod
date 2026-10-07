@@ -1,9 +1,12 @@
 import { atom, read, update } from 'claude-code'
 import type { Elements, EngineInterface, Register, RenderSurface } from 'claude-code'
 
-import type { Activity, AgentRun, Phase, Step } from '../types'
+import type { Activity, AgentRun, Job, Phase, Step } from '../types'
 
 const PANE = 'steps'
+const HISTORY_PANE = 'steps-history'
+const KEEP_HISTORY = 30
+const PROMPT_EXCERPT = 72
 const KEEP_ACTIVITY = 40
 const SHOW_ACTIVITY = 5
 
@@ -12,6 +15,13 @@ const activity = atom({ plugin: 'step-tracker', key: 'activity' } as const, [])
 const agents = atom({ plugin: 'step-tracker', key: 'agents' } as const, [])
 const phase = atom({ plugin: 'step-tracker', key: 'phase' } as const, 'idle')
 const isBandHidden = atom({ plugin: 'step-tracker', key: 'isBandHidden' } as const, false)
+const job = atom({ plugin: 'step-tracker', key: 'job' } as const, null)
+const history = atom({ plugin: 'step-tracker', key: 'history' } as const, [])
+
+function excerpt(text: string): string {
+  const line = text.trim().replace(/\s+/g, ' ')
+  return line.length > PROMPT_EXCERPT ? `${line.slice(0, PROMPT_EXCERPT - 1)}…` : line
+}
 
 /** The mod's own tools, as the model calls them. Matched by RegExp: the
  * engine lays its tool-name union before these are registered. */
@@ -150,6 +160,7 @@ async function drawTracker($: EngineInterface, { Box, Text }: Table) {
   const acts = await read($, activity)
   const runs = await read($, agents)
   const now = await read($, phase)
+  const current = await read($, job)
 
   const done = list.filter(s => s.status === 'completed').length
   const recent = acts.slice(-SHOW_ACTIVITY)
@@ -159,11 +170,12 @@ async function drawTracker($: EngineInterface, { Box, Text }: Table) {
       <Box>
         <Text bold>Steps</Text>
         <Text dimColor>{list.length > 0 ? `  ${done}/${list.length} done` : ''}</Text>
+        {current && <Text dimColor wrap="truncate-end">{'  · '}{current.prompt}</Text>}
       </Box>
 
       {list.length === 0 && (
         <Text dimColor wrap="wrap">
-          No steps yet. Claude lists them here when a job takes more than one.
+          {current ? 'No steps recorded for this job yet.' : 'No steps yet. Claude lists them here when a job takes more than one.'}
         </Text>
       )}
 
@@ -211,12 +223,41 @@ async function drawTracker($: EngineInterface, { Box, Text }: Table) {
   )
 }
 
+/** Previous jobs, newest first, each with the steps it recorded. */
+async function drawHistory($: EngineInterface, { Box, Text }: Table) {
+  const jobs = await read($, history)
+
+  return (
+    <Box flexDirection="column" paddingX={1}>
+      <Text bold>Previous jobs</Text>
+      {jobs.length === 0 && <Text dimColor>None yet. A job is kept here once the next prompt starts.</Text>}
+      {[...jobs].reverse().map((j, i) => {
+        const done = j.steps.filter(s => s.status === 'completed').length
+        return (
+          <Box key={j.id} flexDirection="column" marginTop={1}>
+            <Text wrap="truncate-end">
+              {jobs.length - i}. {j.prompt || '(no prompt text)'}
+            </Text>
+            <Text dimColor>{'   '}{done}/{j.steps.length} done</Text>
+            {j.steps.map((step, k) => (
+              <Text dimColor={step.status === 'completed'} wrap="truncate-end">
+                {'   '}{step.status === 'completed' ? '✓' : step.status === 'in_progress' ? '▶' : '○'} {k + 1}. {step.title}
+              </Text>
+            ))}
+          </Box>
+        )
+      })}
+    </Box>
+  )
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'steps',
-      description: 'Show the step tracker above the prompt; "/steps hide" hides it, "/steps pane" opens it as a pane, "/steps reset" clears it',
-      argumentHint: '[hide|pane|reset]',
+      description:
+        'Show the step tracker above the prompt; "/steps history" lists previous jobs, "/steps hide" hides it, "/steps pane" opens it as a pane, "/steps reset" clears it',
+      argumentHint: '[history|hide|pane|reset]',
     })
     await $.tool.register({
       name: 'plan',
@@ -256,6 +297,7 @@ export const register: Register = on => {
     })
     // The band is the default; a pane left open by an earlier load is closed here.
     await $.ui.close({ id: PANE })
+    await $.ui.close({ id: HISTORY_PANE })
     await refreshStatus($)
 
     return next(e)
@@ -273,11 +315,21 @@ export const register: Register = on => {
     if (arg === 'hide') {
       await update($, isBandHidden, () => true)
       await $.ui.close({ id: PANE })
+      await $.ui.close({ id: HISTORY_PANE })
       return { text: 'Step tracker hidden. /steps shows it again.' }
     }
     if (arg === 'pane') {
       const opened = await $.ui.open({ id: PANE, title: 'Steps' })
       return { text: opened.isPlaced ? 'Step tracker pane opened.' : `Step tracker pane waiting: ${opened.reason}` }
+    }
+    if (arg === 'history') {
+      const jobs = await read($, history)
+      const opened = await $.ui.open({ id: HISTORY_PANE, title: 'Previous jobs' })
+      return {
+        text: opened.isPlaced
+          ? `History pane opened: ${jobs.length} previous job(s). Esc returns to the prompt; ctrl+x x closes it.`
+          : `History pane waiting: ${opened.reason}`,
+      }
     }
     await update($, isBandHidden, () => false)
     await $.ui.close({ id: PANE })
@@ -482,7 +534,22 @@ export const register: Register = on => {
   })
 
   on('turn.start', async ($, e, next) => {
-    // The last list stays on screen, finished or not, until the next plan replaces it.
+    // Every prompt is a new job: the previous one, if it recorded steps, goes to history.
+    const now = await $.clock.now()
+    const previous = await read($, job)
+    const previousSteps = await read($, steps)
+    if (previousSteps.length > 0) {
+      const finished: Job = {
+        id: previous?.id ?? `job-${now}`,
+        prompt: previous?.prompt ?? '',
+        startedAt: previous?.startedAt ?? now,
+        endedAt: now,
+        steps: previousSteps,
+      }
+      await update($, history, list => [...list, finished].slice(-KEEP_HISTORY))
+    }
+    await update($, job, () => ({ id: e.turnId, prompt: excerpt(e.text), startedAt: now, steps: [] }))
+    await update($, steps, () => [])
     await update($, activity, () => [])
     await update($, agents, () => [])
     await update($, phase, () => 'working')
@@ -518,4 +585,7 @@ export const register: Register = on => {
 
   // The same tracker as a pane, for anyone who prefers a sidebar: /steps pane.
   on('ui.render', { component: 'Pane', requestId: PANE }, ($, e) => drawTracker($, $.ui.resolve(e)))
+
+  // Previous jobs: /steps history.
+  on('ui.render', { component: 'Pane', requestId: HISTORY_PANE }, ($, e) => drawHistory($, $.ui.resolve(e)))
 }

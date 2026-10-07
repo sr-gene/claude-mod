@@ -2,7 +2,7 @@
 
 A Claude Code mod that shows, live, the steps Claude is working through, which one is active, and what it is doing right now.
 
-It draws a **Steps** panel directly above the prompt input (collapsible with the `[-]` mark) and a one-line summary on the status line. `/steps pane` shows the same tracker as a pane instead (a sidebar in the fullscreen terminal). The mod registers two tools of its own, `plan` and `step`, and adds one short system-prompt section asking Claude to record multi-step work with them, so it works on every build. When Claude's built-in task tools (`TaskCreate`, `TaskUpdate`, `TodoWrite`) are present and used, those are mirrored into the list as well. Tool calls and running subagents appear under **Now** as they happen. The last list stays on screen after the turn ends, until the next plan replaces it.
+It draws a **Steps** panel directly above the prompt input (collapsible with the `[-]` mark) and a one-line summary on the status line. `/steps pane` shows the same tracker as a pane instead (a sidebar in the fullscreen terminal). The mod registers two tools of its own, `plan` and `step`, and adds one short system-prompt section asking Claude to record multi-step work with them, so it works on every build. When Claude's built-in task tools (`TaskCreate`, `TaskUpdate`, `TodoWrite`) are present and used, those are mirrored into the list as well. Tool calls and running subagents appear under **Now** as they happen. Every prompt is a new job: the panel is labelled with the prompt and starts empty, and the previous job's steps move to a history you can open with `/steps history`. A finished job stays on screen until the next prompt.
 
 ```
 Steps                              1/5 done
@@ -23,6 +23,7 @@ Now   calling a tool
 
 - `/steps` shows the panel above the prompt.
 - `/steps hide` hides it.
+- `/steps history` opens a pane listing previous jobs and their steps.
 - `/steps pane` opens the tracker as a pane instead.
 - `/steps reset` clears the step list and activity.
 

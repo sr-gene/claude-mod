@@ -26,6 +26,15 @@ export type AgentRun = {
 
 export type Phase = 'idle' | 'working' | 'thinking' | 'writing' | 'tool'
 
+/** One job: the prompt that started a turn and the steps recorded during it. */
+export type Job = {
+  id: string
+  prompt: string
+  startedAt: number
+  endedAt?: number
+  steps: Step[]
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'step-tracker': {
@@ -34,6 +43,8 @@ declare module 'claude-code' {
       agents: AgentRun[]
       phase: Phase
       isBandHidden: boolean
+      job: Job | null
+      history: Job[]
     }
   }
 }
