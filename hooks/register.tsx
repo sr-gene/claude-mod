@@ -161,41 +161,53 @@ async function drawTracker($: EngineInterface, { Box, Text }: Table) {
   const runs = await read($, agents)
   const now = await read($, phase)
   const current = await read($, job)
+  const jobs = await read($, history)
 
-  const done = list.filter(s => s.status === 'completed').length
+  // Until the current job records steps, the last job's list stays on screen, marked as previous.
+  const last = list.length === 0 ? jobs[jobs.length - 1] : undefined
+  const shown = list.length > 0 ? list : last?.steps ?? []
+  const isPrevious = list.length === 0 && last !== undefined
+  const label = isPrevious ? last.prompt : current?.prompt ?? ''
+  const done = shown.filter(s => s.status === 'completed').length
   const recent = acts.slice(-SHOW_ACTIVITY)
 
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
       <Box>
-        <Text bold>Steps</Text>
-        <Text dimColor>{list.length > 0 ? `  ${done}/${list.length} done` : ''}</Text>
-        {current && <Text dimColor wrap="truncate-end">{'  · '}{current.prompt}</Text>}
+        <Text bold dimColor={isPrevious}>{isPrevious ? 'Last job' : 'Steps'}</Text>
+        <Text dimColor>{shown.length > 0 ? `  ${done}/${shown.length} done` : ''}</Text>
+        {label !== '' && <Text dimColor wrap="truncate-end">{'  · '}{label}</Text>}
       </Box>
 
-      {list.length === 0 && (
+      {shown.length === 0 && (
         <Text dimColor wrap="wrap">
           {current ? 'No steps recorded for this job yet.' : 'No steps yet. Claude lists them here when a job takes more than one.'}
         </Text>
       )}
 
-      {list.map((step, i) => (
+      {shown.map((step, i) => (
         <Box key={step.id} flexDirection="column">
           <Text
             wrap="truncate-end"
-            bold={step.status === 'in_progress'}
-            dimColor={step.status === 'completed'}
-            color={step.status === 'in_progress' ? 'claude' : step.status === 'completed' ? 'success' : undefined}
+            bold={!isPrevious && step.status === 'in_progress'}
+            dimColor={isPrevious || step.status === 'completed'}
+            color={isPrevious ? undefined : step.status === 'in_progress' ? 'claude' : step.status === 'completed' ? 'success' : undefined}
           >
             {step.status === 'completed' ? '✓' : step.status === 'in_progress' ? '▶' : '○'} {i + 1}. {step.title}
           </Text>
-          {step.status === 'in_progress' && step.activeForm && (
+          {!isPrevious && step.status === 'in_progress' && step.activeForm && (
             <Text dimColor wrap="truncate-end">
               {'     '}{step.activeForm}…
             </Text>
           )}
         </Box>
       ))}
+
+      {isPrevious && current && (
+        <Text dimColor wrap="truncate-end">
+          {'  '}now: {current.prompt || '(no prompt text)'} · no steps recorded yet
+        </Text>
+      )}
 
       <Box marginTop={1}>
         <Text bold>Now</Text>
@@ -575,9 +587,10 @@ export const register: Register = on => {
   // something to show (steps, or a turn running); hidden by /steps hide or a survey.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const list = await read($, steps)
+    const jobs = await read($, history)
     const now = await read($, phase)
     const hidden = await read($, isBandHidden)
-    const isQuiet = e.props.hasSurvey || hidden || (list.length === 0 && now === 'idle')
+    const isQuiet = e.props.hasSurvey || hidden || (list.length === 0 && jobs.length === 0 && now === 'idle')
     if (isQuiet) return next(e)
 
     return drawTracker($, $.ui.resolve(e))

@@ -313,3 +313,39 @@ test('the band above the prompt shows the steps, and stays empty while idle with
     await ui.unmount()
   }
 })
+
+test('until the new job records steps, the band keeps the last job on screen marked as previous', async ($, on) => {
+  const w = world(on)
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+  on('turn.complete', (_$, e) => ({ text: e.answer }))
+
+  await $.turn.start({ text: 'build it', turnId: 'b1' })
+  await callAny($, { tool: 'mcp__step-tracker__plan', steps: [{ title: 'Alpha' }, { title: 'Beta' }] })
+  await callAny($, { tool: 'mcp__step-tracker__step', index: 1, status: 'completed' })
+  await callAny($, { tool: 'mcp__step-tracker__step', index: 2, status: 'completed' })
+  await $.turn.complete({ turnId: 'b1', answer: 'done', durationMs: 10, isAborted: false, reason: 'answer' })
+
+  await $.turn.start({ text: 'is this intentional?', turnId: 'b2' })
+  await $.turn.complete({ turnId: 'b2', answer: 'yes', durationMs: 10, isAborted: false, reason: 'answer' })
+  expect(w.steps()).toEqual([])
+
+  for (const surface of SURFACES) {
+    const band = await $.ui.mount({ plugin: PLUGIN, surface, ...BAND, props: { ...BAND.props, isWorking: false } })
+    expect(await band.find({ type: 'Text', text: /Last job/ })).toBeDefined()
+    expect(await band.find({ type: 'Text', text: /build it/ })).toBeDefined()
+    expect(await band.find({ type: 'Text', text: /2\/2 done/ })).toBeDefined()
+    expect(await band.find({ type: 'Text', text: /Alpha/ })).toBeDefined()
+    expect(await band.find({ type: 'Text', text: /now: is this intentional\?/ })).toBeDefined()
+    await band.unmount()
+  }
+
+  await $.turn.start({ text: 'next build', turnId: 'b3' })
+  await callAny($, { tool: 'mcp__step-tracker__plan', steps: [{ title: 'Gamma' }] })
+  for (const surface of SURFACES) {
+    const band = await $.ui.mount({ plugin: PLUGIN, surface, ...BAND })
+    expect(await band.find({ type: 'Text', text: /Last job/ })).toBeUndefined()
+    expect(await band.find({ type: 'Text', text: /Alpha/ })).toBeUndefined()
+    expect(await band.find({ type: 'Text', text: /Gamma/ })).toBeDefined()
+    await band.unmount()
+  }
+})
