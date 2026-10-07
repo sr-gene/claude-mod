@@ -1,0 +1,5 @@
+{
+  "name": "gene-claude-mods",
+  "owner": { "name": "gene" },
+  "plugins": [{ "name": "step-tracker", "source": "./" }]
+}

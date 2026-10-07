@@ -1,0 +1,6 @@
+{
+  "name": "step-tracker",
+  "version": "0.1.0",
+  "description": "Live pane and status line showing the steps Claude is working through, which one is active, and what it is doing right now.",
+  "types": "./types/index.d.ts"
+}
