@@ -79,6 +79,28 @@ const NUDGE_TODO = [
   'For a single-step request, skip this.',
 ].join('\n')
 
+// The systemic triggers. The system-prompt nudge above is easy to overlook under a
+// long CLAUDE.md, so every prompt also carries a reminder the model reads right
+// beside it, and a job that reaches its second tool call with no plan gets one
+// more after that call's result.
+const PROMPT_REMINDER = [
+  '<step-tracker>',
+  'Before acting, decide whether this request takes two or more distinct actions (tool calls, edits,',
+  'checks). If it does, make your FIRST tool call mcp__step-tracker__plan with every step in order, then',
+  'mark each step in_progress and completed with mcp__step-tracker__step as you go. A plain question or a',
+  'single-step request needs no plan.',
+  '</step-tracker>',
+].join('\n')
+
+const TOOL_REMINDER_AT = 2
+const TOOL_REMINDER = [
+  '<step-tracker>',
+  `This job has made ${TOOL_REMINDER_AT} tool calls and no steps are recorded. If more actions remain, call`,
+  'mcp__step-tracker__plan now with every step of the job (the ones already done included), then',
+  'mcp__step-tracker__step as each starts and finishes. If the job is finished, ignore this.',
+  '</step-tracker>',
+].join('\n')
+
 const STATUSES = new Set<Step['status']>(['pending', 'in_progress', 'completed'])
 
 /** The text a plan or step call answers the model with. */
@@ -361,6 +383,10 @@ export const register: Register = on => {
     return { sections: [...composed.sections, { id: 'step-tracker', text, scope: 'session' }] }
   })
 
+  // The per-prompt trigger: a block the model reads beside the prompt as typed,
+  // never shown to the person. Attached on the way down, before the turn starts.
+  on('prompt.submit', ($, e, next) => next({ ...e, context: [...(e.context ?? []), PROMPT_REMINDER] }))
+
   // The mod's own tools: work on every build, whether or not TaskCreate exists.
   on('tool.call', { tool: PLAN_MATCH }, async ($, e) => {
     const raw = (e as unknown as Record<string, unknown>).steps
@@ -516,7 +542,14 @@ export const register: Register = on => {
     )
     await refreshStatus($)
 
-    return ran
+    // The safety net: the main loop's second tool call of a job that recorded no
+    // plan carries a reminder after its result. Once per job, never for a subagent.
+    if (e.agentId || ran.deny !== undefined) return ran
+    const own = (await read($, activity)).filter(a => !a.agentId).length
+    const planned = (await read($, steps)).length > 0
+    if (own !== TOOL_REMINDER_AT || planned) return ran
+
+    return { ...ran, context: [...(ran.context ?? []), TOOL_REMINDER] }
   })
 
   // Phase between tool calls: thinking, writing, or preparing a tool call.

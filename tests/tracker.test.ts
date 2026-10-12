@@ -349,3 +349,51 @@ test('until the new job records steps, the band keeps the last job on screen mar
     await band.unmount()
   }
 })
+
+test('every submitted prompt carries the step-tracker reminder beside it, unseen by the person', async ($, on) => {
+  world(on)
+  // The engine beneath: the prompt enters with whatever context arrived.
+  on('prompt.submit', (_$, e) => ({ text: e.text, context: e.context }))
+
+  const entered = await $.prompt.submit({ text: 'fix the build', wait: false, origin: { kind: 'composer' } })
+
+  expect(entered.drop).toBeUndefined()
+  expect(entered.text).toBe('fix the build')
+  expect(entered.context).toHaveLength(1)
+  expect(entered.context?.[0]).toMatch(/mcp__step-tracker__plan/)
+})
+
+test("a job's second tool call with no plan carries a reminder after its result; a planned job and a subagent get none", async ($, on) => {
+  const w = world(on)
+  on('tool.call', { tool: /^mcp__demo__lookup$/ }, () => ({ result: { ok: true } }))
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+
+  await $.turn.start({ text: 'do a thing', turnId: 'r1' })
+  const first = await callAny($, { tool: DEMO, query: 'one' })
+  expect(first.context).toBeUndefined()
+  const second = await callAny($, { tool: DEMO, query: 'two' })
+  expect(second.deny).toBeUndefined()
+  expect(second.context).toHaveLength(1)
+  expect(second.context?.[0]).toMatch(/mcp__step-tracker__plan/)
+  const third = await callAny($, { tool: DEMO, query: 'three' })
+  expect(third.context).toBeUndefined()
+  expect(w.activity()).toHaveLength(3)
+
+  // A subagent's calls neither count nor get reminded.
+  await $.turn.start({ text: 'delegated', turnId: 'r2' })
+  const sub1 = await callAny($, { tool: DEMO, query: 'a', agentId: 'agent-1' })
+  const sub2 = await callAny($, { tool: DEMO, query: 'b', agentId: 'agent-1' })
+  expect(sub1.context).toBeUndefined()
+  expect(sub2.context).toBeUndefined()
+  const main1 = await callAny($, { tool: DEMO, query: 'c' })
+  expect(main1.context).toBeUndefined()
+  const main2 = await callAny($, { tool: DEMO, query: 'd' })
+  expect(main2.context).toHaveLength(1)
+
+  // A job that planned first is left alone.
+  await $.turn.start({ text: 'planned', turnId: 'r3' })
+  await callAny($, { tool: 'mcp__step-tracker__plan', steps: [{ title: 'Alpha' }, { title: 'Beta' }] })
+  await callAny($, { tool: DEMO, query: 'e' })
+  const planned = await callAny($, { tool: DEMO, query: 'f' })
+  expect(planned.context).toBeUndefined()
+})
