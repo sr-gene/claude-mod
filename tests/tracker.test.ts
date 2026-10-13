@@ -314,7 +314,7 @@ test('the band above the prompt shows the steps, and stays empty while idle with
   }
 })
 
-test('until the new job records steps, the band keeps the last job on screen marked as previous', async ($, on) => {
+test('a new prompt heads the band at once; until it records steps the last job stays beneath, dimmed', async ($, on) => {
   const w = world(on)
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('turn.complete', (_$, e) => ({ text: e.answer }))
@@ -331,11 +331,13 @@ test('until the new job records steps, the band keeps the last job on screen mar
 
   for (const surface of SURFACES) {
     const band = await $.ui.mount({ plugin: PLUGIN, surface, ...BAND, props: { ...BAND.props, isWorking: false } })
-    expect(await band.find({ type: 'Text', text: /Last job/ })).toBeDefined()
-    expect(await band.find({ type: 'Text', text: /build it/ })).toBeDefined()
-    expect(await band.find({ type: 'Text', text: /2\/2 done/ })).toBeDefined()
-    expect(await band.find({ type: 'Text', text: /Alpha/ })).toBeDefined()
-    expect(await band.find({ type: 'Text', text: /now: is this intentional\?/ })).toBeDefined()
+    expect(await band.find({ type: 'Text', text: /^Steps$/ })).toBeDefined()
+    expect(await band.find({ type: 'Text', text: /· is this intentional\?/ })).toBeDefined()
+    expect(await band.find({ type: 'Text', text: /last job: build it · 2\/2 done/ })).toBeDefined()
+    const kept = await band.find({ type: 'Text', text: /Alpha/ })
+    expect(kept).toBeDefined()
+    expect(kept?.props.dimColor).toBe(true)
+    expect(await band.find({ type: 'Text', text: /2\/2/ })).toBeDefined()
     await band.unmount()
   }
 
@@ -343,7 +345,7 @@ test('until the new job records steps, the band keeps the last job on screen mar
   await callAny($, { tool: 'mcp__step-tracker__plan', steps: [{ title: 'Gamma' }] })
   for (const surface of SURFACES) {
     const band = await $.ui.mount({ plugin: PLUGIN, surface, ...BAND })
-    expect(await band.find({ type: 'Text', text: /Last job/ })).toBeUndefined()
+    expect(await band.find({ type: 'Text', text: /last job:/ })).toBeUndefined()
     expect(await band.find({ type: 'Text', text: /Alpha/ })).toBeUndefined()
     expect(await band.find({ type: 'Text', text: /Gamma/ })).toBeDefined()
     await band.unmount()
@@ -475,12 +477,15 @@ test('the arrows in the header page back through previous jobs and forward to th
   })
   await $.turn.start({ text: 'fourth prompt', turnId: 'h4' })
   const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
-  expect(await ui.find({ type: 'Text', text: /^Last job$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Steps$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /· fourth prompt/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /last job: third prompt/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Gamma/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /3\/4/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /4\/4/ })).toBeDefined()
   await ui.press({ key: 'older' })
-  expect(await ui.find({ type: 'Text', text: /Job 2\/4/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Job 3\/4/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /now: fourth prompt · no steps recorded yet/ })).toBeDefined()
   await ui.press({ key: 'newer' })
-  expect(await ui.find({ type: 'Text', text: /^Last job$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Steps$/ })).toBeDefined()
   await ui.unmount()
 })

@@ -19,21 +19,16 @@ const isBandHidden = atom({ plugin: 'step-tracker', key: 'isBandHidden' } as con
 const isPromptExpanded = atom({ plugin: 'step-tracker', key: 'isPromptExpanded' } as const, false)
 const viewIndex = atom({ plugin: 'step-tracker', key: 'viewIndex' } as const, null)
 
-/**
- * Pages the band through history. While the live job has no steps the band shows
- * the newest history job implicitly (null), so paging treats that job as "live".
- */
+/** Pages the band through history: null is the live job, an index a history job. */
 async function pageHistory($: EngineInterface, dir: 'older' | 'newer'): Promise<void> {
   const jobs = await read($, history)
-  const liveIsEmpty = (await read($, steps)).length === 0
-  const newest = liveIsEmpty ? jobs.length - 1 : jobs.length
   await update($, viewIndex, v => {
     if (dir === 'older') {
-      const from = v === null ? newest : v
+      const from = v === null ? jobs.length : v
       return from - 1 < 0 ? v : from - 1
     }
     if (v === null) return null
-    return v + 1 >= newest ? null : v + 1
+    return v + 1 >= jobs.length ? null : v + 1
   })
 }
 const job = atom({ plugin: 'step-tracker', key: 'job' } as const, null)
@@ -208,15 +203,13 @@ async function drawTracker($: EngineInterface, { Box, Text, Button }: Table) {
   const isExpanded = await read($, isPromptExpanded)
   const view = await read($, viewIndex)
 
-  // The arrows browse history; otherwise, until the current job records steps,
-  // the last job's list stays on screen, marked as previous.
+  // The header is the live job, or the history job the arrows browse. While the
+  // live job has no steps, the last job's list stays on screen beneath it, dimmed.
   const viewed = view !== null ? jobs[view] : undefined
-  const isBrowsing = viewed !== undefined
-  const last = !isBrowsing && list.length === 0 ? jobs[jobs.length - 1] : undefined
-  const fromLast = last !== undefined
-  const isPrevious = isBrowsing || fromLast
-  const shown = isBrowsing ? viewed.steps : list.length > 0 ? list : last?.steps ?? []
-  const labelled = isBrowsing ? viewed : fromLast ? last : current
+  const isPrevious = viewed !== undefined
+  const last = !isPrevious && list.length === 0 ? jobs[jobs.length - 1] : undefined
+  const shown = isPrevious ? viewed.steps : list.length > 0 ? list : last?.steps ?? []
+  const labelled = isPrevious ? viewed : current
   const label = labelled?.prompt ?? ''
   const full = labelled?.fullPrompt ?? label
   const done = shown.filter(s => s.status === 'completed').length
@@ -225,15 +218,16 @@ async function drawTracker($: EngineInterface, { Box, Text, Button }: Table) {
 
   // Positions, oldest first: every history job, then the live one.
   const total = jobs.length + (current ? 1 : 0)
-  const pos = view !== null && isBrowsing ? view + 1 : fromLast ? jobs.length : total
-  const title = isBrowsing ? `Job ${pos}/${total}` : fromLast ? 'Last job' : 'Steps'
+  const pos = view !== null && isPrevious ? view + 1 : total
+  const title = isPrevious ? `Job ${pos}/${total}` : 'Steps'
+  const isLastKept = last !== undefined
 
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
       <Box justifyContent="space-between">
         <Box flexGrow={1} flexShrink={1}>
           <Text bold dimColor={isPrevious}>{title}</Text>
-          <Text dimColor>{shown.length > 0 ? `  ${done}/${shown.length} done` : ''}</Text>
+          <Text dimColor>{shown.length > 0 && !isLastKept ? `  ${done}/${shown.length} done` : ''}</Text>
           {label !== '' && !isExpanded && <Text dimColor wrap="truncate-end">{'  · '}{label}</Text>}
           {label !== '' && (
             <Button
@@ -249,7 +243,7 @@ async function drawTracker($: EngineInterface, { Box, Text, Button }: Table) {
           <Box flexShrink={0} marginLeft={1}>
             <Button key="older" plain dimColor={pos <= 1} label="◀" onPress={() => void pageHistory($, 'older')} />
             <Text dimColor> {pos}/{total} </Text>
-            <Button key="newer" plain dimColor={!isBrowsing} label="▶" onPress={() => void pageHistory($, 'newer')} />
+            <Button key="newer" plain dimColor={!isPrevious} label="▶" onPress={() => void pageHistory($, 'newer')} />
           </Box>
         )}
       </Box>
@@ -264,17 +258,23 @@ async function drawTracker($: EngineInterface, { Box, Text, Button }: Table) {
         </Text>
       )}
 
+      {isLastKept && (
+        <Text dimColor wrap="truncate-end">
+          {'  '}last job: {last.prompt || '(no prompt text)'} · {done}/{shown.length} done
+        </Text>
+      )}
+
       {shown.map((step, i) => (
         <Box key={step.id} flexDirection="column">
           <Text
             wrap="truncate-end"
-            bold={!isPrevious && step.status === 'in_progress'}
-            dimColor={isPrevious || step.status === 'completed'}
-            color={isPrevious ? undefined : step.status === 'in_progress' ? 'claude' : step.status === 'completed' ? 'success' : undefined}
+            bold={!isPrevious && !isLastKept && step.status === 'in_progress'}
+            dimColor={isPrevious || isLastKept || step.status === 'completed'}
+            color={isPrevious || isLastKept ? undefined : step.status === 'in_progress' ? 'claude' : step.status === 'completed' ? 'success' : undefined}
           >
             {step.status === 'completed' ? '✓' : step.status === 'in_progress' ? '▶' : '○'} {i + 1}. {step.title}
           </Text>
-          {!isPrevious && step.status === 'in_progress' && step.activeForm && (
+          {!isPrevious && !isLastKept && step.status === 'in_progress' && step.activeForm && (
             <Text dimColor wrap="truncate-end">
               {'     '}{step.activeForm}…
             </Text>
