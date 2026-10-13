@@ -397,3 +397,29 @@ test("a job's second tool call with no plan carries a reminder after its result;
   const planned = await callAny($, { tool: DEMO, query: 'f' })
   expect(planned.context).toBeUndefined()
 })
+
+test('the header shows an excerpt of the prompt, and a press on [more] shows the whole prompt', async ($, on) => {
+  world(on)
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+
+  const long =
+    'please refactor the authentication module so that every token check goes through one guard, then run the suite and push'
+  await $.turn.start({ text: long, turnId: 'p1' })
+  await callAny($, { tool: 'mcp__step-tracker__plan', steps: [{ title: 'Refactor' }, { title: 'Push' }] })
+
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: PLUGIN, surface, ...BAND })
+    expect(await ui.find({ type: 'Text', text: /please refactor the authentication module.*…$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /then run the suite and push/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Button', text: /more/ })).toBeDefined()
+
+    await ui.press({ key: 'prompt' })
+    expect(await ui.find({ type: 'Text', text: /then run the suite and push$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Button', text: /less/ })).toBeDefined()
+
+    await ui.press({ key: 'prompt' })
+    expect(await ui.find({ type: 'Text', text: /then run the suite and push/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Button', text: /more/ })).toBeDefined()
+    await ui.unmount()
+  }
+})

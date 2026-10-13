@@ -7,6 +7,7 @@ const PANE = 'steps'
 const HISTORY_PANE = 'steps-history'
 const KEEP_HISTORY = 30
 const PROMPT_EXCERPT = 72
+const FULL_PROMPT_MAX = 2_000
 const KEEP_ACTIVITY = 40
 const SHOW_ACTIVITY = 5
 
@@ -15,6 +16,7 @@ const activity = atom({ plugin: 'step-tracker', key: 'activity' } as const, [])
 const agents = atom({ plugin: 'step-tracker', key: 'agents' } as const, [])
 const phase = atom({ plugin: 'step-tracker', key: 'phase' } as const, 'idle')
 const isBandHidden = atom({ plugin: 'step-tracker', key: 'isBandHidden' } as const, false)
+const isPromptExpanded = atom({ plugin: 'step-tracker', key: 'isPromptExpanded' } as const, false)
 const job = atom({ plugin: 'step-tracker', key: 'job' } as const, null)
 const history = atom({ plugin: 'step-tracker', key: 'history' } as const, [])
 
@@ -174,22 +176,25 @@ async function noteAgent($: EngineInterface, agentId: string): Promise<void> {
   await update($, agents, l => (l.some(a => a.id === agentId) ? l : [...l, run]))
 }
 
-type Table = Pick<Elements[RenderSurface], 'Box' | 'Text'>
+type Table = Pick<Elements[RenderSurface], 'Box' | 'Text' | 'Button'>
 
 /** The tracker as drawn in the band above the prompt and in the pane alike. */
-async function drawTracker($: EngineInterface, { Box, Text }: Table) {
+async function drawTracker($: EngineInterface, { Box, Text, Button }: Table) {
   const list = await read($, steps)
   const acts = await read($, activity)
   const runs = await read($, agents)
   const now = await read($, phase)
   const current = await read($, job)
   const jobs = await read($, history)
+  const isExpanded = await read($, isPromptExpanded)
 
   // Until the current job records steps, the last job's list stays on screen, marked as previous.
   const last = list.length === 0 ? jobs[jobs.length - 1] : undefined
   const shown = list.length > 0 ? list : last?.steps ?? []
   const isPrevious = list.length === 0 && last !== undefined
-  const label = isPrevious ? last.prompt : current?.prompt ?? ''
+  const labelled = isPrevious ? last : current
+  const label = labelled?.prompt ?? ''
+  const full = labelled?.fullPrompt ?? label
   const done = shown.filter(s => s.status === 'completed').length
   const recent = acts.slice(-SHOW_ACTIVITY)
 
@@ -198,8 +203,21 @@ async function drawTracker($: EngineInterface, { Box, Text }: Table) {
       <Box>
         <Text bold dimColor={isPrevious}>{isPrevious ? 'Last job' : 'Steps'}</Text>
         <Text dimColor>{shown.length > 0 ? `  ${done}/${shown.length} done` : ''}</Text>
-        {label !== '' && <Text dimColor wrap="truncate-end">{'  · '}{label}</Text>}
+        {label !== '' && !isExpanded && <Text dimColor wrap="truncate-end">{'  · '}{label}</Text>}
+        {label !== '' && (
+          <Button
+            key="prompt"
+            plain
+            dimColor
+            label={isExpanded ? ' [less]' : ' [more]'}
+            onPress={() => update($, isPromptExpanded, v => !v)}
+          />
+        )}
       </Box>
+
+      {label !== '' && isExpanded && (
+        <Text dimColor wrap="wrap">{full}</Text>
+      )}
 
       {shown.length === 0 && (
         <Text dimColor wrap="wrap">
@@ -587,13 +605,22 @@ export const register: Register = on => {
       const finished: Job = {
         id: previous?.id ?? `job-${now}`,
         prompt: previous?.prompt ?? '',
+        ...(previous?.fullPrompt ? { fullPrompt: previous.fullPrompt } : {}),
         startedAt: previous?.startedAt ?? now,
         endedAt: now,
         steps: previousSteps,
       }
       await update($, history, list => [...list, finished].slice(-KEEP_HISTORY))
     }
-    await update($, job, () => ({ id: e.turnId, prompt: excerpt(e.text), startedAt: now, steps: [] }))
+    const full = e.text.trim()
+    await update($, job, () => ({
+      id: e.turnId,
+      prompt: excerpt(e.text),
+      fullPrompt: full.length > FULL_PROMPT_MAX ? `${full.slice(0, FULL_PROMPT_MAX - 1)}…` : full,
+      startedAt: now,
+      steps: [],
+    }))
+    await update($, isPromptExpanded, () => false)
     await update($, steps, () => [])
     await update($, activity, () => [])
     await update($, agents, () => [])

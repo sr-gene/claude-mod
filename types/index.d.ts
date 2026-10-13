@@ -29,7 +29,10 @@ export type Phase = 'idle' | 'working' | 'thinking' | 'writing' | 'tool'
 /** One job: the prompt that started a turn and the steps recorded during it. */
 export type Job = {
   id: string
+  /** A one-line excerpt of the prompt, for the header row. */
   prompt: string
+  /** The prompt as typed (capped), shown when the header is expanded. */
+  fullPrompt?: string
   startedAt: number
   endedAt?: number
   steps: Step[]
@@ -43,6 +46,8 @@ declare module 'claude-code' {
       agents: AgentRun[]
       phase: Phase
       isBandHidden: boolean
+      /** Whether the header shows the whole prompt instead of its excerpt. */
+      isPromptExpanded: boolean
       job: Job | null
       history: Job[]
     }
