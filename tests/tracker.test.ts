@@ -423,3 +423,64 @@ test('the header shows an excerpt of the prompt, and a press on [more] shows the
     await ui.unmount()
   }
 })
+
+test('the arrows in the header page back through previous jobs and forward to the live one', async ($, on) => {
+  const w = world(on)
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+  on('turn.complete', (_$, e) => ({ text: e.answer }))
+
+  const run = async (turnId: string, text: string, title: string) => {
+    await $.turn.start({ text, turnId })
+    await callAny($, { tool: 'mcp__step-tracker__plan', steps: [{ title }] })
+    await callAny($, { tool: 'mcp__step-tracker__step', index: 1, status: 'completed' })
+    await $.turn.complete({ turnId, answer: 'ok', durationMs: 1, isAborted: false, reason: 'answer' })
+  }
+  await run('h1', 'first prompt', 'Alpha')
+  await run('h2', 'second prompt', 'Beta')
+  await $.turn.start({ text: 'third prompt', turnId: 'h3' })
+  await callAny($, { tool: 'mcp__step-tracker__plan', steps: [{ title: 'Gamma' }] })
+  expect(w.history()).toHaveLength(2)
+
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: PLUGIN, surface, ...BAND })
+    expect(await ui.find({ type: 'Text', text: /^Steps$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Gamma/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /3\/3/ })).toBeDefined()
+
+    await ui.press({ key: 'older' })
+    expect(await ui.find({ type: 'Text', text: /Job 2\/3/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Beta/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /second prompt/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /now: third prompt · 0\/1 done/ })).toBeDefined()
+
+    await ui.press({ key: 'older' })
+    expect(await ui.find({ type: 'Text', text: /Job 1\/3/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Alpha/ })).toBeDefined()
+
+    await ui.press({ key: 'older' })
+    expect(await ui.find({ type: 'Text', text: /Job 1\/3/ })).toBeDefined()
+
+    await ui.press({ key: 'newer' })
+    expect(await ui.find({ type: 'Text', text: /Job 2\/3/ })).toBeDefined()
+    await ui.press({ key: 'newer' })
+    expect(await ui.find({ type: 'Text', text: /^Steps$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Gamma/ })).toBeDefined()
+    await ui.unmount()
+  }
+
+  // A new prompt returns the band to the live job.
+  await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND }).then(async ui => {
+    await ui.press({ key: 'older' })
+    await ui.unmount()
+  })
+  await $.turn.start({ text: 'fourth prompt', turnId: 'h4' })
+  const ui = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', ...BAND })
+  expect(await ui.find({ type: 'Text', text: /^Last job$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Gamma/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /3\/4/ })).toBeDefined()
+  await ui.press({ key: 'older' })
+  expect(await ui.find({ type: 'Text', text: /Job 2\/4/ })).toBeDefined()
+  await ui.press({ key: 'newer' })
+  expect(await ui.find({ type: 'Text', text: /^Last job$/ })).toBeDefined()
+  await ui.unmount()
+})

@@ -48,6 +48,8 @@ declare module 'claude-code' {
       isBandHidden: boolean
       /** Whether the header shows the whole prompt instead of its excerpt. */
       isPromptExpanded: boolean
+      /** The history job the band is browsing (an index into `history`), or null for the live job. */
+      viewIndex: number | null
       job: Job | null
       history: Job[]
     }
