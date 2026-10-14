@@ -203,12 +203,11 @@ async function drawTracker($: EngineInterface, { Box, Text, Button }: Table, col
   const isExpanded = await read($, isPromptExpanded)
   const view = await read($, viewIndex)
 
-  // The header is the live job, or the history job the arrows browse. While the
-  // live job has no steps, the last job's list stays on screen beneath it, dimmed.
+  // The header is the live job, or the history job the arrows browse. A new job
+  // starts with an empty list; earlier jobs are reached with the arrows alone.
   const viewed = view !== null ? jobs[view] : undefined
   const isPrevious = viewed !== undefined
-  const last = !isPrevious && list.length === 0 ? jobs[jobs.length - 1] : undefined
-  const shown = isPrevious ? viewed.steps : list.length > 0 ? list : last?.steps ?? []
+  const shown = isPrevious ? viewed.steps : list
   const labelled = isPrevious ? viewed : current
   const label = labelled?.prompt ?? ''
   const full = labelled?.fullPrompt ?? label
@@ -220,11 +219,10 @@ async function drawTracker($: EngineInterface, { Box, Text, Button }: Table, col
   const total = jobs.length + (current ? 1 : 0)
   const pos = view !== null && isPrevious ? view + 1 : total
   const title = isPrevious ? `Job ${pos}/${total}` : 'Steps'
-  const isLastKept = last !== undefined
 
   // [more] only when the header row hides part of the prompt: the excerpt cut it
   // (length or line breaks) or the row is wider than the body and gets truncated.
-  const countText = shown.length > 0 && !isLastKept ? `  ${done}/${shown.length} done` : ''
+  const countText = shown.length > 0 ? `  ${done}/${shown.length} done` : ''
   const arrowsWidth = jobs.length > 0 ? ` ◀ ${pos}/${total} ▶`.length + 1 : 0
   const rowWidth = title.length + countText.length + 4 + label.length + arrowsWidth + 2
   const hasMore = label !== '' && (full !== label || rowWidth > columns)
@@ -265,23 +263,17 @@ async function drawTracker($: EngineInterface, { Box, Text, Button }: Table, col
         </Text>
       )}
 
-      {isLastKept && (
-        <Text dimColor wrap="truncate-end">
-          {'  '}last job: {last.prompt || '(no prompt text)'} · {done}/{shown.length} done
-        </Text>
-      )}
-
       {shown.map((step, i) => (
         <Box key={step.id} flexDirection="column">
           <Text
             wrap="truncate-end"
-            bold={!isPrevious && !isLastKept && step.status === 'in_progress'}
-            dimColor={isPrevious || isLastKept || step.status === 'completed'}
-            color={isPrevious || isLastKept ? undefined : step.status === 'in_progress' ? 'claude' : step.status === 'completed' ? 'success' : undefined}
+            bold={!isPrevious && step.status === 'in_progress'}
+            dimColor={isPrevious || step.status === 'completed'}
+            color={isPrevious ? undefined : step.status === 'in_progress' ? 'claude' : step.status === 'completed' ? 'success' : undefined}
           >
             {step.status === 'completed' ? '✓' : step.status === 'in_progress' ? '▶' : '○'} {i + 1}. {step.title}
           </Text>
-          {!isPrevious && !isLastKept && step.status === 'in_progress' && step.activeForm && (
+          {!isPrevious && step.status === 'in_progress' && step.activeForm && (
             <Text dimColor wrap="truncate-end">
               {'     '}{step.activeForm}…
             </Text>
