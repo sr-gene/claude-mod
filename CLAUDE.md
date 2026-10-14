@@ -12,7 +12,7 @@ The repo root is the mod folder and doubles as its own marketplace, so the shape
 
 ```
 .claude-plugin/plugin.json       { name, version, description, "types": "./types/index.d.ts" }
-.claude-plugin/marketplace.json  { name, owner: { name }, plugins: [{ name, source: "./" }] }
+.claude-plugin/marketplace.json  { name, owner: { name }, plugins: [{ name, description, version, source: "./" }] }  (the /plugin Marketplace tab shows THIS version and description, not plugin.json's: bump both files together)
 .claude-plugin/types/            WRITTEN BY THE ENGINE on every load. Never edit, never commit by hand.
 hooks/hooks.json                 { "modules": ["./register.tsx"] }   (exactly one module path, relative to this file)
 hooks/register.tsx               export const register: Register = (on, options) => { ... }

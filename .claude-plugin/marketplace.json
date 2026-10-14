@@ -1,5 +1,12 @@
 {
   "name": "gene-claude-mods",
   "owner": { "name": "gene" },
-  "plugins": [{ "name": "step-tracker", "source": "./" }]
+  "plugins": [
+    {
+      "name": "step-tracker",
+      "description": "Live pane and status line showing the steps Claude is working through, which one is active, and what it is doing right now.",
+      "version": "0.5.2",
+      "source": "./"
+    }
+  ]
 }
