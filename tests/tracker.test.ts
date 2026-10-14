@@ -489,3 +489,23 @@ test('the arrows in the header page back through previous jobs and forward to th
   expect(await ui.find({ type: 'Text', text: /^Steps$/ })).toBeDefined()
   await ui.unmount()
 })
+
+test('a short prompt that fits the header row gets no [more] button', async ($, on) => {
+  world(on)
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+
+  await $.turn.start({ text: 'fix it', turnId: 's1' })
+  await callAny($, { tool: 'mcp__step-tracker__plan', steps: [{ title: 'Fix' }] })
+
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: PLUGIN, surface, ...BAND })
+    expect(await ui.find({ type: 'Text', text: /· fix it/ })).toBeDefined()
+    expect(await ui.find({ type: 'Button', text: /more/ })).toBeUndefined()
+    await ui.unmount()
+
+    // The same prompt in a body too narrow for the row brings the button back.
+    const narrow = await $.ui.mount({ plugin: PLUGIN, surface, ...BAND, props: { ...BAND.props, bodyColumns: 20 } })
+    expect(await narrow.find({ type: 'Button', text: /more/ })).toBeDefined()
+    await narrow.unmount()
+  }
+})

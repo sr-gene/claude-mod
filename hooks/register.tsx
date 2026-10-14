@@ -193,7 +193,7 @@ async function noteAgent($: EngineInterface, agentId: string): Promise<void> {
 type Table = Pick<Elements[RenderSurface], 'Box' | 'Text' | 'Button'>
 
 /** The tracker as drawn in the band above the prompt and in the pane alike. */
-async function drawTracker($: EngineInterface, { Box, Text, Button }: Table) {
+async function drawTracker($: EngineInterface, { Box, Text, Button }: Table, columns: number) {
   const list = await read($, steps)
   const acts = await read($, activity)
   const runs = await read($, agents)
@@ -222,14 +222,21 @@ async function drawTracker($: EngineInterface, { Box, Text, Button }: Table) {
   const title = isPrevious ? `Job ${pos}/${total}` : 'Steps'
   const isLastKept = last !== undefined
 
+  // [more] only when the header row hides part of the prompt: the excerpt cut it
+  // (length or line breaks) or the row is wider than the body and gets truncated.
+  const countText = shown.length > 0 && !isLastKept ? `  ${done}/${shown.length} done` : ''
+  const arrowsWidth = jobs.length > 0 ? ` ◀ ${pos}/${total} ▶`.length + 1 : 0
+  const rowWidth = title.length + countText.length + 4 + label.length + arrowsWidth + 2
+  const hasMore = label !== '' && (full !== label || rowWidth > columns)
+
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
       <Box justifyContent="space-between">
         <Box flexGrow={1} flexShrink={1}>
           <Text bold dimColor={isPrevious}>{title}</Text>
-          <Text dimColor>{shown.length > 0 && !isLastKept ? `  ${done}/${shown.length} done` : ''}</Text>
+          <Text dimColor>{countText}</Text>
           {label !== '' && !isExpanded && <Text dimColor wrap="truncate-end">{'  · '}{label}</Text>}
-          {label !== '' && (
+          {hasMore && (
             <Button
               key="prompt"
               plain
@@ -248,7 +255,7 @@ async function drawTracker($: EngineInterface, { Box, Text, Button }: Table) {
         )}
       </Box>
 
-      {label !== '' && isExpanded && (
+      {hasMore && isExpanded && (
         <Text dimColor wrap="wrap">{full}</Text>
       )}
 
@@ -694,11 +701,11 @@ export const register: Register = on => {
     const isQuiet = e.props.hasSurvey || hidden || (list.length === 0 && jobs.length === 0 && now === 'idle')
     if (isQuiet) return next(e)
 
-    return drawTracker($, $.ui.resolve(e))
+    return drawTracker($, $.ui.resolve(e), e.props.bodyColumns)
   })
 
   // The same tracker as a pane, for anyone who prefers a sidebar: /steps pane.
-  on('ui.render', { component: 'Pane', requestId: PANE }, ($, e) => drawTracker($, $.ui.resolve(e)))
+  on('ui.render', { component: 'Pane', requestId: PANE }, ($, e) => drawTracker($, $.ui.resolve(e), e.props.bodyColumns))
 
   // Previous jobs: /steps history.
   on('ui.render', { component: 'Pane', requestId: HISTORY_PANE }, ($, e) => drawHistory($, $.ui.resolve(e)))
