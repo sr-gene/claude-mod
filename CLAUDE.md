@@ -81,7 +81,15 @@ Facts about the kit that are not obvious from the docs (see `world()` in `plugin
 
 ## Installed for every session
 
-This folder is registered as the `gene-claude-mods` marketplace at user scope, and its mods are installed from it as `<mod>@gene-claude-mods`. Sessions read each mod straight from `plugins/<mod>/`, no copy: after an edit, `/reload-plugins` in a running session picks it up. `claude plugin validate` and `claude plugin test` on the mod folder still apply before reloading.
+Since 2026-10-15 the `gene-claude-mods` marketplace is registered at user scope from GitHub (`sr-gene/gene-claude-mods`, cloned to `~/.claude/plugins/marketplaces/gene-claude-mods`), not from this folder, and its mods are installed from it as `<mod>@gene-claude-mods`. Sessions run an installed copy under `~/.claude/plugins/cache/gene-claude-mods/<mod>/<version>/`, never this checkout, so a local edit reaches every session only after:
+
+1. `claude plugin validate plugins/<mod>` and `claude plugin test plugins/<mod>` pass;
+2. the mod's version is bumped in both `plugins/<mod>/.claude-plugin/plugin.json` and its `marketplace.json` entry (the cache is keyed by version);
+3. the commit is pushed;
+4. `claude plugin marketplace update gene-claude-mods` re-pulls the clone (reinstall the mod with `claude plugin install <mod>@gene-claude-mods --scope user` if `claude plugin list` still shows the old version);
+5. `/reload-plugins` in a running session.
+
+To try a change before pushing, use hot reload (below) or `claude --plugin-dir plugins/<mod>`.
 
 ## Hot reload
 

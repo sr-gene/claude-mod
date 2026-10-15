@@ -12,7 +12,7 @@ A live `Steps` panel in the band above the prompt (`AbovePrompt`; `/steps pane` 
 
 ## Installed for every session
 
-Since 2026-10-07 the mod is installed at user scope as `step-tracker@gene-claude-mods`, from the repo registered as a marketplace (`claude plugin list` shows the folder it reads from). Every session loads it from the checkout directly, no copy: after an edit, `/reload-plugins` in a running session picks it up. Since 2026-10-15 the mod lives in `plugins/step-tracker/` (it was the repo root before).
+Since 2026-10-07 the mod is installed at user scope as `step-tracker@gene-claude-mods`. Since 2026-10-15 it lives in `plugins/step-tracker/` (it was the repo root before) and installs from the GitHub marketplace, not this checkout; the release steps are in the root `CLAUDE.md` under "Installed for every session".
 
 ## Hot reload
 

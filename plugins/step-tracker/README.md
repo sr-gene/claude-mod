@@ -33,7 +33,7 @@ Now   calling a tool
 /plugin install step-tracker --marketplace sr-gene/gene-claude-mods
 ```
 
-Answer `y` to add the marketplace, then choose a scope. From a local checkout, this installs it for every session and reads it straight from the folder, so edits take effect with `/reload-plugins`:
+Answer `y` to add the marketplace, then choose a scope. To install from a local checkout instead (the installed copy is refreshed with `claude plugin marketplace update gene-claude-mods` and `/reload-plugins`):
 
 ```
 claude plugin marketplace add /path/to/gene-claude-mods
