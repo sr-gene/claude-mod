@@ -4,33 +4,40 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-The **step-tracker** mod: a live `Steps` panel in the band above the prompt (`AbovePrompt`; `/steps pane` draws the same tree in a `Pane`) plus a status-line summary showing the steps Claude is working through, which one is active, and what tool or subagent is running now. The mod registers its own tools `mcp__step-tracker__plan` and `mcp__step-tracker__step` (a build may not offer `TaskCreate`/`TodoWrite` at all; this one did not), and three triggers ask Claude to record multi-step work with them: a `prompt.compose` hook appends a system-prompt section; a `prompt.submit` hook attaches a `context` block beside every prompt (read by the model, never shown); and the generic `tool.call` hook adds a `context` reminder after the result of a job's second main-loop tool call when no plan is recorded (once per job, never for a subagent). Added 2026-10-12 because the system-prompt section alone was often ignored under a long CLAUDE.md. Calls to the built-in `TaskCreate`/`TaskUpdate`/`TodoWrite`, when they exist, are mirrored into the same list. Commands: `/steps`, `/steps history`, `/steps hide`, `/steps pane`, `/steps reset`. Every prompt is a new job (user's choice): `turn.start` archives the previous job's steps into `history` (capped at 30, session state), records the new `job` with an excerpt of the prompt, and empties the list; the band header shows an excerpt of the job's prompt with a plain `[more]`/`[less]` Button (key `prompt`, drawn only when the excerpt differs from the full prompt or the estimated row width exceeds `e.props.bodyColumns`) that toggles `isPromptExpanded` to show `job.fullPrompt` (capped at 2000 chars) wrapped beneath the header; the flag resets on every new job. The header's right side holds `◀ pos/total ▶` Buttons (keys `older`/`newer`) that page `viewIndex` through `history` (`pageHistory`); `viewIndex` resets to null on every new job. The header is always the live job (user's choice: a new prompt moves the band to the current job at once) and a new job starts with an empty list ("No steps recorded for this job yet."); earlier jobs are reached with the arrows alone. (A dimmed `last job:` retention of the previous list under an empty job existed 2026-10-13 to 2026-10-14 and was removed at the user's request: it read as stale steps.)
+A marketplace of Claude Code **mods**, one folder per mod under `plugins/`. Each mod is a plugin of *function hooks* that runs inside Claude Code itself (terminal, desktop Code tab, VS Code, mobile) and can draw panes/bands/status text, intercept tool calls and prompts, register slash commands and tools, run timers, etc. They are **not** classic settings-hook plugins (`claude plugin init` scaffolds that other kind under `~/.claude/skills`; do not use it here).
 
-It is a Claude Code **mod**: a plugin of *function hooks* that runs inside Claude Code itself (terminal, desktop Code tab, VS Code, mobile) and can draw panes/bands/status text, intercept tool calls and prompts, register slash commands and tools, run timers, etc. It is **not** a classic settings-hook plugin (`claude plugin init` scaffolds that other kind under `~/.claude/skills`; do not use it here).
+Mods today:
 
-The repo root is the mod folder and doubles as its own marketplace, so the shape is:
+- `plugins/step-tracker/`: live Steps panel and status line. Its own notes are in `plugins/step-tracker/CLAUDE.md`.
+
+The repo root holds only the marketplace catalog; every mod folder is self-contained:
 
 ```
-.claude-plugin/plugin.json       { name, version, description, "types": "./types/index.d.ts" }
-.claude-plugin/marketplace.json  { name, owner: { name }, plugins: [{ name, description, version, source: "./" }] }  (the /plugin Marketplace tab shows THIS version and description, not plugin.json's: bump both files together)
-.claude-plugin/types/            WRITTEN BY THE ENGINE on every load. Never edit, never commit by hand.
-hooks/hooks.json                 { "modules": ["./register.tsx"] }   (exactly one module path, relative to this file)
-hooks/register.tsx               export const register: Register = (on, options) => { ... }
-types/index.d.ts                 the mod's state/noun contract (declare module 'claude-code' { interface PluginState { ... } })
-tests/*.test.ts(x)               run by `claude plugin test`
-tsconfig.json                    extends ./.claude-plugin/types/tsconfig.json (engine-provided)
+.claude-plugin/marketplace.json            { name, owner: { name }, plugins: [{ name, description, version, source: "./plugins/<mod>" }, ...] }
+                                           (the /plugin Marketplace tab shows THIS version and description, not plugin.json's: bump the mod's entry here and its plugin.json together)
+plugins/<mod>/
+  .claude-plugin/plugin.json               { name, version, description, "types": "./types/index.d.ts" }
+  .claude-plugin/types/                    WRITTEN BY THE ENGINE on every load. Never edit, never commit (gitignored as **/.claude-plugin/types/).
+  hooks/hooks.json                         { "modules": ["./register.tsx"] }   (exactly one module path, relative to this file)
+  hooks/register.tsx                       export const register: Register = (on, options) => { ... }
+  types/index.d.ts                         the mod's state/noun contract (declare module 'claude-code' { interface PluginState { ... } })
+  tests/*.test.ts(x)                       run by `claude plugin test`
+  tsconfig.json                            extends ./.claude-plugin/types/tsconfig.json (engine-provided)
+  README.md, CLAUDE.md                     the mod's user docs and its own agent notes
 ```
+
+Adding a mod: create `plugins/<mod>/` in that shape, add its entry to `marketplace.json`, and list it above and in the root `README.md`. Mods share no code (each module is loaded on its own, with no dynamic `import()`), so copy small helpers instead.
 
 **Before writing or debugging `hooks/`, load the `plugin-authoring` skill** (`/plugin-authoring` or the Skill tool). It writes this build's full API declaration (`claude-code.d.ts`, ~21k lines) and holds the three worked examples (pane, band, tool-call guard). The declaration file is the authority on every event's input/result, every `$` noun, and every element's props. The API is early access and changes between releases: grep the `.d.ts` for the name at hand (`'tool.call'`, `Pane: {`, `export type ToolCallResult`) rather than trusting memory.
 
 ## Commands
 
 ```sh
-claude plugin validate .        # reads manifest + module source the way the engine will; lists hooks, calls, and everything it would refuse. Run early and often.
-claude plugin validate . --strict --json   # CI form: warnings fail, machine-readable report
-claude plugin test .            # runs every *.test.ts(x) under the dir against the real engine host (no fs/network/process). No name/file filter exists: to run one file, pass its parent folder (e.g. `claude plugin test tests/pane`).
-tsc -p .                        # type-check. Only works after the engine has laid .claude-plugin/types/ (i.e. after the mod has loaded once).
-claude --plugin-dir . --debug   # run a session with this mod loaded from disk; the folder is watched and saves hot-reload the module.
+claude plugin validate plugins/<mod>        # reads manifest + module source the way the engine will; lists hooks, calls, and everything it would refuse. Run early and often.
+claude plugin validate plugins/<mod> --strict --json   # CI form: warnings fail, machine-readable report
+claude plugin test plugins/<mod>            # runs every *.test.ts(x) under the dir against the real engine host (no fs/network/process). No name/file filter exists: to run one file, pass its parent folder (e.g. `claude plugin test plugins/<mod>/tests/pane`).
+tsc -p plugins/<mod>                        # type-check. Only works after the engine has laid .claude-plugin/types/ (i.e. after the mod has loaded once).
+claude --plugin-dir plugins/<mod> --debug   # run a session with this mod loaded from disk; the folder is watched and saves hot-reload the module.
 ```
 
 Inside a running session: `/reload-plugins` re-reads an installed/marketplace plugin. A mod being edited by the model inside its own session reloads once when the turn ends.
@@ -60,7 +67,7 @@ Live hot-reload during a Claude Code session uses the session's dev-mods folder 
 
 Import `test`, `expect`, `mock` from `'claude-code/testing'`. A test body gets the engine's own `$` and an `on` whose hooks sit *beneath* the plugin, standing in for the engine. UI tests mount through `$.ui.mount({ plugin, surface, component, props })` and act by key (`press`, `input`, `find`); loop the body over `['terminal', 'desktop'] as const` so the test proves surface independence. Options come from `test(name, { options }, body)`.
 
-Facts about the kit that are not obvious from the docs (see `world()` in `tests/tracker.test.ts`):
+Facts about the kit that are not obvious from the docs (see `world()` in `plugins/step-tracker/tests/tracker.test.ts`):
 - The test's `$` has only the nouns `tool, command, config, prompt, skill, attribution, agent, session, telemetry, turn, ui` plus `classic`. There is **no `$.state`**: read plugin state back by hooking `on('state.set', ($, e, next) => { record(e.key, e.value); return next(e) })`.
 - Nothing answers `$.clock`, `$.ui.status`, `$.store` or `$.env` beneath the plugin, and a hook that calls one with no implementation is **skipped**. Every test therefore calls `mock.clock(on)` and registers `on('ui.status', () => ({ value: undefined }))` first (a hook answering a call on `$` returns `{ value }`).
 - A `ui.render` hook that passes with `next(e)` needs the engine's drawing beneath it in a test: `on('ui.render', () => ({ type: 'engine', ref: 0 }))`.
@@ -70,12 +77,12 @@ Facts about the kit that are not obvious from the docs (see `world()` in `tests/
 
 ## Type-checking before the engine has laid types
 
-`tsc -p .` only works after a load has written `.claude-plugin/types/`. Before that, a scratch tsconfig outside the repo (the one in the types file header) whose `include` names the skill's `types/claude-code.d.ts` plus this repo's `hooks`, `types` and `tests` folders does the same job: `npx -p typescript@5 tsc -p <scratch dir>`.
+`tsc -p plugins/<mod>` only works after a load has written `.claude-plugin/types/`. Before that, a scratch tsconfig outside the repo (the one in the types file header) whose `include` names the skill's `types/claude-code.d.ts` plus the mod's `hooks`, `types` and `tests` folders does the same job: `npx -p typescript@5 tsc -p <scratch dir>`.
 
 ## Installed for every session
 
-Since 2026-10-07 the mod is installed at user scope as `step-tracker@gene-claude-mods`, from this folder registered as a marketplace (`claude plugin list` shows `Read from: D:\gene\projects\gene\gene-claude-mods`). Every session loads it from here directly, no copy: after an edit, `/reload-plugins` in a running session picks it up. `claude plugin validate .` and `claude plugin test .` still apply before reloading.
+This folder is registered as the `gene-claude-mods` marketplace at user scope, and its mods are installed from it as `<mod>@gene-claude-mods`. Sessions read each mod straight from `plugins/<mod>/`, no copy: after an edit, `/reload-plugins` in a running session picks it up. `claude plugin validate` and `claude plugin test` on the mod folder still apply before reloading.
 
-## Hot reload in this repo
+## Hot reload
 
-`C:\Users\gene\.claude\dev-mods\<session-id>\step-tracker` is a Windows junction to this folder when a session has hot reload enabled; the engine then writes `.claude-plugin/types/` here (gitignored) and reloads on every save. Outside such a session, `claude --plugin-dir .` does the same.
+`C:\Users\gene\.claude\dev-mods\<session-id>\<mod>` is a Windows junction to `plugins/<mod>` when a session has hot reload enabled; the engine then writes that mod's `.claude-plugin/types/` (gitignored) and reloads on every save.
