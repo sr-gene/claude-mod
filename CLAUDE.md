@@ -74,7 +74,7 @@ Facts about the kit that are not obvious from the docs (see `world()` in `tests/
 
 ## Installed for every session
 
-Since 2026-10-07 the mod is installed at user scope as `step-tracker@gene-claude-mods`, from this folder registered as a marketplace (`claude plugin list` shows `Read from: D:\gene\projects\gene\claude-mod`). Every session loads it from here directly, no copy: after an edit, `/reload-plugins` in a running session picks it up. `claude plugin validate .` and `claude plugin test .` still apply before reloading.
+Since 2026-10-07 the mod is installed at user scope as `step-tracker@gene-claude-mods`, from this folder registered as a marketplace (`claude plugin list` shows `Read from: D:\gene\projects\gene\gene-claude-mods`). Every session loads it from here directly, no copy: after an edit, `/reload-plugins` in a running session picks it up. `claude plugin validate .` and `claude plugin test .` still apply before reloading.
 
 ## Hot reload in this repo
 
