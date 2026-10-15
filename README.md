@@ -30,20 +30,20 @@ Now   calling a tool
 ## Install
 
 ```
-/plugin install step-tracker --marketplace sr-gene/claude-mod
+/plugin install step-tracker --marketplace sr-gene/gene-claude-mods
 ```
 
 Answer `y` to add the marketplace, then choose a scope. From a local checkout, this installs it for every session and reads it straight from the folder, so edits take effect with `/reload-plugins`:
 
 ```
-claude plugin marketplace add /path/to/claude-mod
+claude plugin marketplace add /path/to/gene-claude-mods
 claude plugin install step-tracker@gene-claude-mods --scope user
 ```
 
 To try it for one session only:
 
 ```
-claude --plugin-dir /path/to/claude-mod
+claude --plugin-dir /path/to/gene-claude-mods
 ```
 
 ## Develop
