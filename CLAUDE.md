@@ -9,6 +9,7 @@ A marketplace of Claude Code **mods**, one folder per mod under `plugins/`. Each
 Mods today:
 
 - `plugins/step-tracker/`: live Steps panel and status line. Its own notes are in `plugins/step-tracker/CLAUDE.md`.
+- `plugins/next-prompt/`: ranked, cleaned-up, habit-learning guesses for the next prompt (`prompt.suggest`, `/next`). Its own notes are in `plugins/next-prompt/CLAUDE.md`.
 
 The repo root holds only the marketplace catalog; every mod folder is self-contained:
 

@@ -7,6 +7,12 @@
       "description": "Live pane and status line showing the steps Claude is working through, which one is active, and what it is doing right now.",
       "version": "0.5.3",
       "source": "./plugins/step-tracker"
+    },
+    {
+      "name": "next-prompt",
+      "description": "Better guesses for your next prompt: several ranked choices, cleaned up, and learned from what you actually type.",
+      "version": "0.1.0",
+      "source": "./plugins/next-prompt"
     }
   ]
 }
