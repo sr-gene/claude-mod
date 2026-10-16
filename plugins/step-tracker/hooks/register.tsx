@@ -677,6 +677,9 @@ export const register: Register = on => {
   })
 
   on('turn.start', async ($, e, next) => {
+    // A subagent's or teammate's run is part of the current job, not a new one.
+    if (e.agentId) return next(e)
+
     // Every prompt is a new job: the previous one, if it recorded steps, goes to history.
     const now = await $.clock.now()
     const previous = await read($, job)

@@ -344,6 +344,25 @@ test("an interrupted turn and an AskUserQuestion call are the person's move too"
   }
 })
 
+test('a subagent starting or ending mid-job keeps the job, its steps and its phase', async ($, on) => {
+  const w = world(on)
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+  on('turn.complete', (_$, e) => ({ text: e.answer }))
+
+  await $.turn.start({ text: 'build it', turnId: 'm1' })
+  await callAny($, { tool: 'mcp__step-tracker__plan', steps: [{ title: 'Explore' }, { title: 'Build' }] })
+  await callAny($, { tool: 'mcp__step-tracker__step', index: 1, status: 'in_progress' })
+
+  await $.turn.start({ text: 'search the code', turnId: 'a1', agentId: 'agent-1' })
+  expect(w.steps().map(s => s.title)).toEqual(['Explore', 'Build'])
+  expect(w.job()).toMatchObject({ id: 'm1', prompt: 'build it' })
+  expect(w.history()).toEqual([])
+
+  await $.turn.complete({ turnId: 'a1', agentId: 'agent-1', answer: 'found it', durationMs: 10, isAborted: false, reason: 'answer' })
+  expect(w.phase()).not.toBe('yours')
+  expect(w.steps()).toHaveLength(2)
+})
+
 test('the band above the prompt shows the steps, and stays empty while idle with none', async ($, on) => {
   const w = world(on)
 
