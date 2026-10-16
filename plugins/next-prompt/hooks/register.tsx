@@ -1,8 +1,8 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Candidate, Sent, UiMode } from '../types'
-import { HISTORY_CAP, MAX_CANDIDATES, filter, habits, match, parse, request, stats } from './suggest'
+import type { Candidate, LastRun, Sent, UiMode } from '../types'
+import { HISTORY_CAP, MAX_CANDIDATES, filter, habits, match, parse, request, stats, statusText } from './suggest'
 
 const ANSWER_TAIL = 1500
 const SENT_CAP = 300
@@ -11,6 +11,7 @@ const candidates = atom({ plugin: 'next-prompt', key: 'candidates' } as const, [
 const lastAnswer = atom({ plugin: 'next-prompt', key: 'lastAnswer' } as const, '')
 const isThinking = atom({ plugin: 'next-prompt', key: 'isThinking' } as const, false)
 const lastEvent = atom({ plugin: 'next-prompt', key: 'lastEvent' } as const, '')
+const lastRun = atom({ plugin: 'next-prompt', key: 'lastRun' } as const, null as LastRun | null)
 const UI_MODES: readonly UiMode[] = ['chips', 'hint']
 
 const ui = atom({ plugin: 'next-prompt', key: 'ui' } as const, [...UI_MODES])
@@ -34,9 +35,7 @@ async function isEnabled($: EngineInterface): Promise<boolean> {
 }
 
 async function refreshStatus($: EngineInterface): Promise<void> {
-  const list = await read($, candidates)
-  const thinking = await read($, isThinking)
-  await $.ui.status(thinking ? 'next: guessing…' : list.length > 1 ? `next: ${list.length} ideas · /next` : undefined)
+  await $.ui.status(statusText(await read($, isThinking), await read($, lastRun)))
 }
 
 export const register: Register = on => {
@@ -48,6 +47,7 @@ export const register: Register = on => {
       argumentHint: '[1-4|ui|stats|off|on|forget]',
     })
     await update($, isThinking, () => false)
+    await update($, lastRun, () => null)
     const modes = await storedUi($)
     await update($, ui, () => modes)
     await refreshStatus($)
@@ -72,6 +72,7 @@ export const register: Register = on => {
     const all = await history($)
     await $.store.set('history', [...all, sent].slice(-HISTORY_CAP))
     await update($, candidates, () => [])
+    await update($, lastRun, () => null)
     await refreshStatus($)
 
     return next(e)
@@ -89,6 +90,7 @@ export const register: Register = on => {
   on('prompt.suggest', async ($, e, next) => {
     if (e.origin.kind !== 'suggestion') return next(e)
     await update($, lastEvent, () => 'guessing')
+    const startedAt = await $.clock.now()
     const all = await history($)
     const cwd = await $.session.cwd()
     const learned = habits(all, cwd)
@@ -123,6 +125,8 @@ export const register: Register = on => {
     const kept = filter(list.map(one => one.text)).slice(0, MAX_CANDIDATES)
     const ranked = kept.map(text => list.find(one => one.text === text) as Candidate)
     await update($, candidates, () => ranked)
+    const ms = (await $.clock.now()) - startedAt
+    await update($, lastRun, () => ({ count: ranked.length, ms }))
     await refreshStatus($)
 
     const [best] = ranked

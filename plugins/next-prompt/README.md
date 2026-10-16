@@ -8,6 +8,8 @@ A Claude Code mod that improves the dim "next prompt" suggestion Claude Code sho
   - **Hint line:** the other guesses at the end of the dim line under the prompt, `next 2: … · 3: … (/next <n>)`.
 
   `/next` lists them and `/next 2` puts guess 2 in the box. `/next ui` turns either place on or off.
+
+  The status line says `next: guessing…` while the guess is made, then `next: ✓ 3 ideas in 2.1s · /next` (or `next: ✓ nothing worth showing`) once it is done, until you send your next prompt.
 - **Cleaned up.** Fillers ("continue", "ok", "thanks"), a repeat of the prompt you just sent, duplicates, multi-line or over-long guesses, and guesses you keep passing over are dropped. If nothing is left, nothing is shown.
 - **Learns your habits.** Every prompt you send is recorded (across sessions, per project first): what you typed and which guess, if any, you took. That shapes the next guesses. `/next stats` shows how often guesses were taken.
 

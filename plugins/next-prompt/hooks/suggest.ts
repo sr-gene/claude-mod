@@ -1,4 +1,4 @@
-import type { Sent } from '../types'
+import type { LastRun, Sent } from '../types'
 
 export const MAX_CANDIDATES = 4
 export const MAX_LENGTH = 160
@@ -130,4 +130,13 @@ export function stats(history: readonly Sent[]) {
   const taken = offered.filter(one => one.taken >= 0)
   const first = taken.filter(one => one.taken === 0 && !one.isEdited)
   return { prompts: history.length, offered: offered.length, taken: taken.length, first: first.length }
+}
+
+/** The status line: guessing while the fork runs, then what it came to until the next prompt. */
+export function statusText(thinking: boolean, run: LastRun | null): string | undefined {
+  if (thinking) return 'next: guessing…'
+  if (!run) return undefined
+  const took = `${(run.ms / 1000).toFixed(1)}s`
+  if (run.count === 0) return `next: ✓ nothing worth showing (${took})`
+  return `next: ✓ ${run.count} idea${run.count === 1 ? '' : 's'} in ${took} · /next`
 }

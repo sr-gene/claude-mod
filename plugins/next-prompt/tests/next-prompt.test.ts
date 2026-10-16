@@ -3,7 +3,7 @@ import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import type { Candidate, Sent } from '../types'
-import { filter, habits, match, parse, request } from '../hooks/suggest'
+import { filter, habits, match, parse, request, statusText } from '../hooks/suggest'
 
 const CWD = 'D:/repo'
 
@@ -14,7 +14,11 @@ const CWD = 'D:/repo'
  */
 function world(on: On, opts: { reply?: string; store?: Record<string, unknown> } = {}) {
   mock.clock(on, { now: 1_000 })
-  on('ui.status', () => ({ value: undefined }))
+  const status: Array<string | undefined> = []
+  on('ui.status', (_$, e) => {
+    status.push(e.text)
+    return { value: undefined }
+  })
   on('session.cwd', () => ({ value: CWD }))
   const store: Record<string, unknown> = { ...opts.store }
   on('store.get', (_$, e) => ({ value: store[e.key] }))
@@ -53,6 +57,7 @@ function world(on: On, opts: { reply?: string; store?: Record<string, unknown> }
     return next(e)
   })
   return {
+    status,
     store,
     forks,
     shown,
@@ -123,6 +128,17 @@ test("with the mod off or the fork failing, the engine's guess is cleaned and sh
   await engineGuess($, '"commit the change"')
   expect(w.forks.length).toBe(0)
   expect(w.shown).toEqual(['commit the change'])
+})
+
+test('the status line says when the guess is done, and clears on the next prompt', async ($, on) => {
+  const w = world(on, { reply: 'push it\nrun the tests' })
+  await engineGuess($, 'commit it')
+  expect(w.status).toContain('next: guessing…')
+  expect(w.status.at(-1)).toMatch(/^next: ✓ 3 ideas in \d+\.\ds · \/next$/)
+  await $.prompt.submit({ text: 'push it', wait: false, origin: { kind: 'composer' } })
+  expect(w.status.at(-1)).toBeUndefined()
+  expect(statusText(false, { count: 1, ms: 2_340 })).toBe('next: ✓ 1 idea in 2.3s · /next')
+  expect(statusText(false, { count: 0, ms: 900 })).toBe('next: ✓ nothing worth showing (0.9s)')
 })
 
 test('a filler guess with nothing better is not shown', async ($, on) => {

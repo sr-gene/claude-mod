@@ -203,7 +203,7 @@ test('a new turn archives the previous job into history and starts the new job e
   await $.tool.call({ tool: 'TaskCreate', subject: 'Second', description: 'x' })
   await $.tool.call({ tool: 'TaskUpdate', taskId: 't-Second', status: 'completed' })
   await $.turn.complete({ turnId: 'turn-2', answer: 'done', durationMs: 10, isAborted: false, reason: 'answer' })
-  expect(w.phase()).toBe('idle')
+  expect(w.phase()).toBe('yours')
   expect(w.steps().map(s => s.title)).toEqual(['Second'])
 
   await $.turn.start({ text: '  a much longer prompt   with spaces  ', turnId: 'turn-3' })
@@ -281,6 +281,67 @@ test("the mod's own plan and step tools drive the list on any build", async ($, 
     expect(await ui.find({ type: 'Text', text: /1\/3 done/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Running tests/ })).toBeDefined()
   })
+})
+
+test('a turn that ends with steps open says it is your turn, in the frame and the status line', async ($, on) => {
+  const w = world(on)
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+  on('turn.complete', (_$, e) => ({ text: e.answer }))
+
+  await $.turn.start({ text: 'set it up', turnId: 'y1' })
+  await callAny($, {
+    tool: 'mcp__step-tracker__plan',
+    steps: [{ title: 'Write config' }, { title: 'Log in', activeForm: 'Logging in' }, { title: 'Deploy' }],
+  })
+  await callAny($, { tool: 'mcp__step-tracker__step', index: 1, status: 'completed' })
+  await callAny($, { tool: 'mcp__step-tracker__step', index: 2, status: 'in_progress' })
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: PLUGIN, surface, ...BAND })
+    expect(await ui.find({ type: 'Text', text: /your turn/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /Logging in/ })).toBeDefined()
+    await ui.unmount()
+  }
+
+  await $.turn.complete({ turnId: 'y1', answer: 'run the login yourself', durationMs: 10, isAborted: false, reason: 'answer' })
+  expect(w.phase()).toBe('yours')
+  expect(w.status.at(-1)).toBe('steps: 1/3 Log in · your turn')
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: PLUGIN, surface, ...BAND, props: { ...BAND.props, isWorking: false } })
+    expect(await ui.find({ type: 'Text', text: /· your turn/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Claude has stopped, 2 steps left open/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /⏸ 2\. Log in/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /waiting for you/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Logging in/ })).toBeUndefined()
+    await ui.unmount()
+  }
+
+  await $.turn.start({ text: 'done, go on', turnId: 'y2' })
+  expect(w.phase()).toBe('working')
+  expect(w.status.at(-1)).not.toContain('your turn')
+})
+
+test("an interrupted turn and an AskUserQuestion call are the person's move too", async ($, on) => {
+  const w = world(on)
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+  on('turn.complete', (_$, e) => ({ text: e.answer }))
+  let during: string | undefined
+  on('tool.call', { tool: /^AskUserQuestion$/ }, () => {
+    during = w.phase()
+    return { result: 'yes' }
+  })
+
+  await $.turn.start({ text: 'ask me', turnId: 'q1' })
+  await callAny($, { tool: 'mcp__step-tracker__plan', steps: [{ title: 'Ask' }, { title: 'Act' }] })
+  await callAny($, { tool: 'AskUserQuestion', questions: [] })
+  expect(during).toBe('waiting')
+  expect(w.phase()).toBe('working')
+
+  await $.turn.complete({ turnId: 'q1', answer: '', durationMs: 10, isAborted: true, reason: 'aborted' })
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: PLUGIN, surface, ...BAND, props: { ...BAND.props, isWorking: false } })
+    expect(await ui.find({ type: 'Text', text: /your turn · interrupted/ })).toBeDefined()
+    await ui.unmount()
+  }
 })
 
 test('the band above the prompt shows the steps, and stays empty while idle with none', async ($, on) => {

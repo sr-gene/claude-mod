@@ -1,6 +1,6 @@
 {
   "name": "next-prompt",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Better guesses for your next prompt: several ranked choices, cleaned up, and learned from what you actually type.",
   "types": "./types/index.d.ts"
 }

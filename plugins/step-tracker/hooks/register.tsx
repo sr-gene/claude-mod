@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { Elements, EngineInterface, Register, RenderSurface } from 'claude-code'
 
-import type { Activity, AgentRun, Job, Phase, Step } from '../types'
+import type { Activity, AgentRun, EndReason, Job, Phase, Step } from '../types'
 
 const PANE = 'steps'
 const HISTORY_PANE = 'steps-history'
@@ -15,6 +15,7 @@ const steps = atom({ plugin: 'step-tracker', key: 'steps' } as const, [])
 const activity = atom({ plugin: 'step-tracker', key: 'activity' } as const, [])
 const agents = atom({ plugin: 'step-tracker', key: 'agents' } as const, [])
 const phase = atom({ plugin: 'step-tracker', key: 'phase' } as const, 'idle')
+const endReason = atom({ plugin: 'step-tracker', key: 'endReason' } as const, null as EndReason | null)
 const isBandHidden = atom({ plugin: 'step-tracker', key: 'isBandHidden' } as const, false)
 const isPromptExpanded = atom({ plugin: 'step-tracker', key: 'isPromptExpanded' } as const, false)
 const viewIndex = atom({ plugin: 'step-tracker', key: 'viewIndex' } as const, null)
@@ -45,6 +46,9 @@ const PLAN_TOOL = 'mcp__step-tracker__plan'
 const STEP_TOOL = 'mcp__step-tracker__step'
 const PLAN_MATCH = /^mcp__step-tracker__plan$/
 const STEP_MATCH = /^mcp__step-tracker__step$/
+
+/** Tools that wait on the person while they run: their call is the person's move. */
+const ASK_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode'])
 
 /** Tools whose calls are the step list itself, not activity worth listing. */
 const TASK_TOOLS = new Set(['TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet', 'TodoWrite', PLAN_TOOL, STEP_TOOL])
@@ -153,6 +157,21 @@ const PHASE_LABEL: Record<Phase, string> = {
   thinking: 'thinking',
   writing: 'writing a reply',
   tool: 'calling a tool',
+  waiting: 'waiting for your answer',
+  yours: 'your turn',
+}
+
+/** Whether the move is the person's: the turn ended, or a tool waits on them. */
+const isPersonsMove = (now: Phase) => now === 'yours' || now === 'waiting'
+
+/** The "Now" line once the turn has ended: why it ended, and whether steps were left open. */
+function yourTurnText(reason: EndReason | null, open: number): string {
+  const why =
+    reason === 'aborted' ? 'interrupted'
+    : reason === 'error' ? 'stopped on an error'
+    : reason === 'refusal' ? 'Claude declined'
+    : 'Claude has stopped'
+  return open > 0 ? `your turn · ${why}, ${open} step${open === 1 ? '' : 's'} left open` : `your turn · ${why}`
 }
 
 async function refreshStatus($: EngineInterface): Promise<void> {
@@ -172,6 +191,7 @@ async function refreshStatus($: EngineInterface): Promise<void> {
   } else if (now !== 'idle') {
     parts.push(PHASE_LABEL[now])
   }
+  if (isPersonsMove(now) && running) parts.push(PHASE_LABEL[now])
 
   $.ui.status(parts.length > 0 ? `steps: ${parts.join(' · ')}` : undefined)
 }
@@ -202,6 +222,13 @@ async function drawTracker($: EngineInterface, { Box, Text, Button }: Table, col
   const jobs = await read($, history)
   const isExpanded = await read($, isPromptExpanded)
   const view = await read($, viewIndex)
+  const reason = await read($, endReason)
+
+  // The person's move: the frame turns from Claude's colour to a call for them.
+  const isYours = isPersonsMove(now)
+  const open = list.filter(s => s.status !== 'completed').length
+  const frameColor = !isYours ? 'claude' : now === 'yours' && open === 0 ? 'success' : 'warning'
+  const nowText = now === 'yours' ? yourTurnText(reason, open) : PHASE_LABEL[now]
 
   // The header is the live job, or the history job the arrows browse. A new job
   // starts with an empty list; earlier jobs are reached with the arrows alone.
@@ -228,11 +255,12 @@ async function drawTracker($: EngineInterface, { Box, Text, Button }: Table, col
   const hasMore = label !== '' && (full !== label || rowWidth > columns)
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1}>
+    <Box flexDirection="column" borderStyle="round" borderColor={frameColor} paddingX={1}>
       <Box justifyContent="space-between">
         <Box flexGrow={1} flexShrink={1}>
           <Text bold dimColor={isPrevious}>{title}</Text>
           <Text dimColor>{countText}</Text>
+          {isYours && !isPrevious && <Text bold color={frameColor}>{'  · your turn'}</Text>}
           {label !== '' && !isExpanded && <Text dimColor wrap="truncate-end">{'  · '}{label}</Text>}
           {hasMore && (
             <Button
@@ -269,11 +297,21 @@ async function drawTracker($: EngineInterface, { Box, Text, Button }: Table, col
             wrap="truncate-end"
             bold={!isPrevious && step.status === 'in_progress'}
             dimColor={isPrevious || step.status === 'completed'}
-            color={isPrevious ? undefined : step.status === 'in_progress' ? 'claude' : step.status === 'completed' ? 'success' : undefined}
+            color={
+              isPrevious ? undefined
+              : step.status === 'in_progress' ? (isYours ? 'warning' : 'claude')
+              : step.status === 'completed' ? 'success'
+              : undefined
+            }
           >
-            {step.status === 'completed' ? '✓' : step.status === 'in_progress' ? '▶' : '○'} {i + 1}. {step.title}
+            {step.status === 'completed' ? '✓' : step.status === 'in_progress' ? (isYours && !isPrevious ? '⏸' : '▶') : '○'} {i + 1}. {step.title}
           </Text>
-          {!isPrevious && step.status === 'in_progress' && step.activeForm && (
+          {!isPrevious && step.status === 'in_progress' && isYours && (
+            <Text color="warning" wrap="truncate-end">
+              {'     '}waiting for you
+            </Text>
+          )}
+          {!isPrevious && step.status === 'in_progress' && !isYours && step.activeForm && (
             <Text dimColor wrap="truncate-end">
               {'     '}{step.activeForm}…
             </Text>
@@ -290,7 +328,7 @@ async function drawTracker($: EngineInterface, { Box, Text, Button }: Table, col
 
       <Box marginTop={1}>
         <Text bold>Now</Text>
-        <Text dimColor> {PHASE_LABEL[now]}</Text>
+        {isYours ? <Text bold color={frameColor}> {nowText}</Text> : <Text dimColor> {nowText}</Text>}
       </Box>
 
       {runs.map(run => (
@@ -299,7 +337,7 @@ async function drawTracker($: EngineInterface, { Box, Text, Button }: Table, col
         </Text>
       ))}
 
-      {recent.length === 0 && now === 'idle' && (
+      {recent.length === 0 && (now === 'idle' || now === 'yours') && (
         <Text dimColor>{'  '}nothing running</Text>
       )}
 
@@ -589,9 +627,12 @@ export const register: Register = on => {
     }
     await update($, activity, list => [...list, item].slice(-KEEP_ACTIVITY))
     if (e.agentId) await noteAgent($, e.agentId)
+    const isAsk = !e.agentId && ASK_TOOLS.has(tool)
+    if (isAsk) await update($, phase, () => 'waiting')
     await refreshStatus($)
 
     const ran = await next(e)
+    if (isAsk) await update($, phase, now => (now === 'waiting' ? 'working' : now))
 
     const isError = ran.deny !== undefined || ran.isError === true
     await update($, activity, list =>
@@ -665,6 +706,7 @@ export const register: Register = on => {
     await update($, activity, () => [])
     await update($, agents, () => [])
     await update($, phase, () => 'working')
+    await update($, endReason, () => null)
     await refreshStatus($)
 
     return next(e)
@@ -676,7 +718,8 @@ export const register: Register = on => {
       await update($, agents, list => list.filter(a => a.id !== gone))
       return next(e)
     }
-    await update($, phase, () => 'idle')
+    await update($, phase, () => 'yours')
+    await update($, endReason, () => e.reason)
     await update($, activity, list => list.map(a => (a.isDone ? a : { ...a, isDone: true })))
     await refreshStatus($)
 
@@ -690,7 +733,8 @@ export const register: Register = on => {
     const jobs = await read($, history)
     const now = await read($, phase)
     const hidden = await read($, isBandHidden)
-    const isQuiet = e.props.hasSurvey || hidden || (list.length === 0 && jobs.length === 0 && now === 'idle')
+    const isQuiet =
+      e.props.hasSurvey || hidden || (list.length === 0 && jobs.length === 0 && (now === 'idle' || now === 'yours'))
     if (isQuiet) return next(e)
 
     return drawTracker($, $.ui.resolve(e), e.props.bodyColumns)

@@ -24,7 +24,15 @@ export type AgentRun = {
   startedAt: number
 }
 
-export type Phase = 'idle' | 'working' | 'thinking' | 'writing' | 'tool'
+/**
+ * What the main loop is doing. `idle` before any turn; `yours` once a turn
+ * has ended (the person's move); `waiting` while a tool waits on the person
+ * (AskUserQuestion, ExitPlanMode).
+ */
+export type Phase = 'idle' | 'working' | 'thinking' | 'writing' | 'tool' | 'waiting' | 'yours'
+
+/** Why the last main-loop turn ended, for the "your turn" line. */
+export type EndReason = 'answer' | 'aborted' | 'refusal' | 'error'
 
 /** One job: the prompt that started a turn and the steps recorded during it. */
 export type Job = {
@@ -45,6 +53,8 @@ declare module 'claude-code' {
       activity: Activity[]
       agents: AgentRun[]
       phase: Phase
+      /** Why the last main-loop turn ended; null while one runs. */
+      endReason: EndReason | null
       isBandHidden: boolean
       /** Whether the header shows the whole prompt instead of its excerpt. */
       isPromptExpanded: boolean

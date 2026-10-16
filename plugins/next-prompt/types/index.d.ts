@@ -9,6 +9,14 @@ export type Candidate = {
   source: CandidateSource
 }
 
+/** What the last guess came to, for the status line until the next prompt. */
+export type LastRun = {
+  /** Guesses kept (0 when every one was filtered out). */
+  count: number
+  /** How long the guess took, fork included. */
+  ms: number
+}
+
 /** One prompt the person sent, and what was offered before it. Kept in $.store. */
 export type Sent = {
   /** The session's directory, so habits are read per project first. */
@@ -35,6 +43,8 @@ declare module 'claude-code' {
       isThinking: boolean
       /** What became of the last suggestion event, for /next when there are no guesses. */
       lastEvent: string
+      /** What the last guess came to; null before one and after each sent prompt. */
+      lastRun: LastRun | null
       /** Where the guesses are shown (from $.store, so /next ui sticks across sessions). */
       ui: UiMode[]
     }
